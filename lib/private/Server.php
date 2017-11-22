@@ -90,6 +90,7 @@ use OC\User\AccountTermMapper;
 use OCP\App\IServiceLoader;
 use OCP\AppFramework\QueryException;
 use OCP\AppFramework\Utility\ITimeFactory;
+use OCP\Events\EventEmitterTrait;
 use OCP\IL10N;
 use OCP\ILogger;
 use OCP\IServerContainer;
@@ -115,6 +116,7 @@ use Symfony\Component\EventDispatcher\GenericEvent;
  * TODO: hookup all manager classes
  */
 class Server extends ServerContainer implements IServerContainer, IServiceLoader {
+	use EventEmitterTrait;
 	/** @var string */
 	private $webRoot;
 
@@ -312,6 +314,9 @@ class Server extends ServerContainer implements IServerContainer, IServiceLoader
 			$userSession->listen('\OC\User', 'postDelete', function ($user) {
 				/** @var $user \OC\User\User */
 				\OC_Hook::emit('OC_User', 'post_deleteUser', ['uid' => $user->getUID()]);
+				$this->emittingCall(function () use (&$user) {
+					return true;
+				}, ['before' => [], 'after' => ['uid' => $user->getUID()]], 'user', 'delete');
 			});
 			$userSession->listen('\OC\User', 'preSetPassword', function ($user, $password, $recoveryPassword) {
 				/** @var $user \OC\User\User */
@@ -323,10 +328,18 @@ class Server extends ServerContainer implements IServerContainer, IServiceLoader
 			});
 			$userSession->listen('\OC\User', 'preLogin', function ($uid, $password) {
 				\OC_Hook::emit('OC_User', 'pre_login', ['run' => true, 'uid' => $uid, 'password' => $password]);
+				$this->emittingCall(function () use (&$uid) {
+				}, ['before' => ['uid' => $uid], 'after' => []], 'user', 'login');
 			});
 			$userSession->listen('\OC\User', 'postLogin', function ($user, $password) {
 				/** @var $user \OC\User\User */
 				\OC_Hook::emit('OC_User', 'post_login', ['run' => true, 'uid' => $user->getUID(), 'password' => $password]);
+				$this->emittingCall(function () use (&$user) {
+					/**
+					 * Return true so that post login data can be processed by subscriber
+					 */
+					return true;
+				}, ['before' => [], 'after' => ['uid' => $user->getUID()]], 'user', 'login');
 			});
 			$userSession->listen('\OC\User', 'preLogout', function () {
 				$event = new GenericEvent(null, []);
@@ -334,10 +347,14 @@ class Server extends ServerContainer implements IServerContainer, IServiceLoader
 			});
 			$userSession->listen('\OC\User', 'logout', function () {
 				\OC_Hook::emit('OC_User', 'logout', []);
+				$this->emittingCall(function () {
+				}, ['before' => ['uid' => '']], 'user', 'logout');
 			});
 			$userSession->listen('\OC\User', 'changeUser', function ($user, $feature, $value) {
 				/** @var $user \OC\User\User */
 				\OC_Hook::emit('OC_User', 'changeUser', ['run' => true, 'user' => $user, 'feature' => $feature, 'value' => $value]);
+				$this->emittingCall(function () use (&$user, &$feature, &$value) {
+				}, ['before' => ['run' => true, 'user' => $user, 'feature' => $feature, 'value' => $value]], 'user', 'featurechange');
 			});
 			return $userSession;
 		});
