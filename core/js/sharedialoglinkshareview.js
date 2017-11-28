@@ -181,11 +181,8 @@
 				success: function() {
 					if (self.mailView) {
 						// also send out email first
-						self.mailView.sendEmails().then(done).fail(function() {
-							done();
-							// re-show the popup
-							self.show();
-						});
+						// do not resolve on errors
+						self.mailView.sendEmails().then(done);
 					} else {
 						done();
 					}
@@ -314,18 +311,27 @@
 			var self = this;
 			var title = t('files_sharing', 'Edit link share: {name}', {name: this.itemModel.getFileInfo().getFullPath()});
 			var buttons = [{
-				text: t('core', 'Save'),
-				click: _.bind(this._onClickSave, this),
-				defaultButton: true
-			}, {
 				text: t('core', 'Cancel'),
 				click: _.bind(this._onClickCancel, this)
 			}];
 
 			if (this.model.isNew()) {
 				title = t('files_sharing', 'Create link share: {name}', {name: this.itemModel.getFileInfo().getFullPath()});
+				buttons.unshift({
+					text: t('core', 'Share'),
+					click: _.bind(this._onClickSave, this),
+					defaultButton: true
+				})
 			}
-			else if (this.model.get('encryptedPassword')) {
+			else {
+				buttons.unshift({
+					text: t('core', 'Save'),
+					click: _.bind(this._onClickSave, this),
+					defaultButton: true
+				})
+			}
+
+			if (this.model.get('encryptedPassword')) {
 				buttons.push({
 					classes: 'removePassword -float-left',
 					text: t('core', 'Remove password'),
