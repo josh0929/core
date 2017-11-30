@@ -286,10 +286,24 @@ class FileTest extends TestCase {
 		// action
 		$caughtException = null;
 		try {
+			$calledCreateAllowed = [];
+			$calledWriteAllowed = [];
+			\OC::$server->getEventDispatcher()->addListener('file.beforeCreate', function (GenericEvent $event) use (&$calledCreateAllowed) {
+				$calledCreateAllowed[] = 'file.beforeCreate';
+				array_push($calledCreateAllowed, $event);
+			});
+			\OC::$server->getEventDispatcher()->addListener('file.beforeCreate', function (GenericEvent $event) use (&$calledWriteAllowed) {
+				$calledWriteAllowed[] = 'file.beforeWrite';
+				array_push($calledWriteAllowed, $event);
+			});
 			// last chunk
 			$file->acquireLock(ILockingProvider::LOCK_SHARED);
 			$file->put('test data two');
 			$file->releaseLock(ILockingProvider::LOCK_SHARED);
+			$this->assertInstanceOf(GenericEvent::class, $calledCreateAllowed[1]);
+			$this->assertArrayHasKey('run', $calledCreateAllowed[1]);
+			$this->assertInstanceOf(GenericEvent::class, $calledWriteAllowed[1]);
+			$this->assertArrayHasKey('run', $calledWriteAllowed[1]);
 		} catch (\Exception $e) {
 			$caughtException = $e;
 		}
@@ -407,19 +421,19 @@ class FileTest extends TestCase {
 					'HTTP_X_OC_MTIME' => -34.43,
 					'expected result' => -34
 			],
-			"long int" => [ 
+			"long int" => [
 					'HTTP_X_OC_MTIME' => PHP_INT_MAX,
-					'expected result' => PHP_INT_MAX 
+					'expected result' => PHP_INT_MAX
 			],
-			"too long int" => [ 
+			"too long int" => [
 					'HTTP_X_OC_MTIME' => PHP_INT_MAX + 1,
-					'expected result' => PHP_INT_MAX 
+					'expected result' => PHP_INT_MAX
 			],
-			"long negative int" => [ 
+			"long negative int" => [
 					'HTTP_X_OC_MTIME' => PHP_INT_MAX * - 1,
 					'expected result' => (PHP_INT_MAX * - 1)
 			],
-			"too long negative int" => [ 
+			"too long negative int" => [
 					'HTTP_X_OC_MTIME' => (PHP_INT_MAX * - 1) - 1,
 					'expected result' => (PHP_INT_MAX * - 1)
 			],
@@ -451,7 +465,7 @@ class FileTest extends TestCase {
 						'HTTP_X_OC_MTIME' => $requestMtime,
 				]
 		], null, $this->config, null);
-		
+
 		$_SERVER['HTTP_OC_CHUNKED'] = true;
 		$file = 'foo.txt';
 		$this->doPut($file.'-chunking-12345-2-0', null, $request);
@@ -500,6 +514,41 @@ class FileTest extends TestCase {
 	}
 
 	/**
+	 * Test the run value when put is called. And then try to modify the run
+	 * value in the listener. Once it is modified check the exception returned
+	 * from main function. The reason for exception is put from Sabre/File.php
+	 * throws exception
+	 *
+	 */
+	public function testPutWithModifyRun() {
+		$view = Filesystem::getView();
+		$view->file_put_contents('/testingfile.txt', 'some content that will be replaced');
+
+		HookHelper::setUpHooks();
+
+		$calledUploadAllowed = [];
+		$calledWriteAllowed = [];
+		\OC::$server->getEventDispatcher()->addListener('file.beforeUpdate', function (GenericEvent $event) use (&$calledUploadAllowed) {
+			$calledUploadAllowed[] = 'file.beforeUpdate';
+			//Now modify run
+			$event->setArgument('run', false);
+			array_push($calledUploadAllowed, $event);
+		});
+		\OC::$server->getEventDispatcher()->addListener('file.beforeWrite', function (GenericEvent $event) use (&$calledWriteAllowed) {
+			$calledWriteAllowed[] = 'file.beforeWrite';
+			//Now modify run
+			$event->setArgument('run', false);
+			array_push($calledWriteAllowed, $event);
+		});
+
+		try {
+			$this->doPut('/testingfile.txt');
+		} catch (\Exception $e) {
+			$this->assertInstanceOf(Exception::class, $e);
+		}
+	}
+
+	/**
 	 * Test that putting a file triggers update hooks
 	 */
 	public function testPutOverwriteFileTriggersHooks() {
@@ -508,7 +557,29 @@ class FileTest extends TestCase {
 
 		HookHelper::setUpHooks();
 
+		$calledUploadAllowed = [];
+		$calledWriteAllowed = [];
+		\OC::$server->getEventDispatcher()->addListener('file.beforeUpdate', function (GenericEvent $event) use (&$calledUploadAllowed) {
+			$calledUploadAllowed[] = 'file.beforeUpdate';
+			if ($event->getArgument('run') === false) {
+				$event->setArgument('run', true);
+			}
+			array_push($calledUploadAllowed, $event);
+		});
+		\OC::$server->getEventDispatcher()->addListener('file.beforeWrite', function (GenericEvent $event) use (&$calledWriteAllowed) {
+			$calledWriteAllowed[] = 'file.beforeWrite';
+			if ($event->getArgument('run') === false) {
+				$event->setArgument('run', true);
+			}
+			array_push($calledWriteAllowed, $event);
+		});
+
 		$this->assertNotEmpty($this->doPut('/foo.txt'));
+
+		$this->assertArrayHasKey('run', $calledWriteAllowed[1]);
+		$this->assertArrayHasKey('run', $calledUploadAllowed[1]);
+		$this->assertInstanceOf(GenericEvent::class, $calledUploadAllowed[1]);
+		$this->assertInstanceOf(GenericEvent::class, $calledWriteAllowed[1]);
 
 		$this->assertCount(4, HookHelper::$hookCalls);
 		$this->assertHookCall(
