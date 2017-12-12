@@ -75,24 +75,39 @@ class Base {
 	}
 
 	/**
-	 * @param string $serverRoot
-	 * @param string|false $app_dir
 	 * @param ITheme $theme
 	 * @param string $app
+	 * @param string $serverRoot
+	 * @param string|false $appDir
 	 * @return string[]
 	 */
-	protected function getAppTemplateDirs($theme, $app, $serverRoot, $app_dir) {
-		// Check if the app is in the app folder or in the root
-		if( file_exists($app_dir.'/templates/' )) {
-			return [
-				$serverRoot.'/'.$theme->getDirectory().'/apps/'.$app.'/templates/',
-				$app_dir.'/templates/',
-			];
+	protected function getAppTemplateDirs(ITheme $theme, $app, $serverRoot, $appDir) {
+		$templateDirectories = [];
+		// A template dir from the active theme first
+		if ($theme->getDirectory() !== '') {
+			$templateDirectories[] = $serverRoot . '/' . $theme->getDirectory() . '/apps/' . $app . '/templates/';
 		}
-		return [
-			$serverRoot.'/'.$theme->getDirectory().'/'.$app.'/templates/',
-			$serverRoot.'/'.$app.'/templates/',
-		];
+
+		// A template dir from the app dir then
+		$templateDirectories[] = $appDir . '/templates/';
+
+		// Settings,core, etc
+		if (empty($templateDirectories)) {
+			if ($theme->getDirectory() !== '') {
+				$templateDirectories[] = $serverRoot . '/' . $theme->getDirectory() . '/' . $app . '/templates/';
+			}
+			$templateDirectories[] = $serverRoot . '/' . $app . '/templates/';
+		}
+
+		// Now filter all non-directory items
+		$templateDirectories = array_filter(
+			$templateDirectories,
+			function($item){
+				return @is_dir($item);
+			}
+		);
+
+		return $templateDirectories;
 	}
 
 	/**
