@@ -168,10 +168,75 @@ class CorsPluginTest extends \Test\TestCase {
 				],
 				true
 			],
+			// OPTIONS headers not allowed but no cross-domain
+			[
+				'[]',
+				true,
+				[
+					'Origin' => 'requesterdomain.tld',
+					'Authorization' => 'abc',
+				],
+				200,
+				[
+					'Access-Control-Allow-Headers' => null,
+					'Access-Control-Allow-Origin' => null,
+					'Access-Control-Allow-Methods' => null,
+				],
+				true
+			],
+			// OPTIONS headers allowed but no cross-domain
+			[
+				'["currentdomain.tld:8080"]',
+				true,
+				[
+					'Origin' => 'currentdomain.tld:8080',
+					'Authorization' => 'abc',
+				],
+				200,
+				[
+					'Access-Control-Allow-Headers' => null,
+					'Access-Control-Allow-Origin' => null,
+					'Access-Control-Allow-Methods' => null,
+				],
+				true
+			],
+			// OPTIONS headers allowed, cross-domain through different port
+			[
+				'["currentdomain.tld:8080"]',
+				true,
+				[
+					'Origin' => 'currentdomain.tld',
+					'Authorization' => 'abc',
+				],
+				200,
+				[
+					'Access-Control-Allow-Headers' => implode(',', $allowedHeaders),
+					'Access-Control-Allow-Origin' => 'requesterdomain.tld',
+					'Access-Control-Allow-Methods' => implode(',', $allowedMethods),
+				],
+				false
+			],
+			// OPTIONS headers allowed, cross-domain through different port (2)
+			[
+				'["currentdomain.tld"]',
+				true,
+				[
+					'Origin' => 'currentdomain.tld:8080',
+					'Authorization' => 'abc',
+				],
+				200,
+				[
+					'Access-Control-Allow-Headers' => implode(',', $allowedHeaders),
+					'Access-Control-Allow-Origin' => 'requesterdomain.tld',
+					'Access-Control-Allow-Methods' => implode(',', $allowedMethods),
+				],
+				false,
+				'currentdomain.tld'
+			],
 			// no Origin header
 			[
 				$allowedDomains,
-				false,
+				true,
 				[
 				],
 				200,
@@ -188,7 +253,7 @@ class CorsPluginTest extends \Test\TestCase {
 	/**
 	 * @dataProvider optionsCases
 	 */
-	public function testOptionsHeaders($allowedDomains, $hasUser, $requestHeaders, $expectedStatus, $expectedHeaders, $expectDavHeaders = false) {
+	public function testOptionsHeaders($allowedDomains, $hasUser, $requestHeaders, $expectedStatus, $expectedHeaders, $expectDavHeaders = false, $requestDomain = 'currentdomain.tld:8080') {
 		$user = $this->createMock(IUser::class);
 		$user->method('getUID')->willReturn('someuser');
 
@@ -203,6 +268,8 @@ class CorsPluginTest extends \Test\TestCase {
 			->willReturn($allowedDomains);
 
 		$this->server->httpRequest->setHeaders($requestHeaders);
+		$this->server->httpRequest->setAbsoluteUrl('https://' . $requestDomain . '/owncloud/remote.php/dav/files/user1/target/path');
+		$this->server->httpRequest->setUrl('/owncloud/remote.php/dav/files/user1/target/path');
 
 		$this->server->addPlugin($this->plugin);
 		$this->server->exec();

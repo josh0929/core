@@ -67,12 +67,24 @@ class CorsPlugin extends \Sabre\DAV\ServerPlugin {
 	public function initialize(\Sabre\DAV\Server $server) {
 		$this->server = $server;
 
-		if (!$this->server->httpRequest->hasHeader('Origin')) {
+		$request = $this->server->httpRequest;
+		if (!$request->hasHeader('Origin') || $request->getHeader('Origin') === $this->getCurrentDomain($request)) {
 			return false;
 		}
 
 		$this->server->on('beforeMethod', [$this, 'setCorsHeaders']);
 		$this->server->on('beforeMethod:OPTIONS', [$this, 'setOptionsRequestHeaders']);
+	}
+
+	private function getCurrentDomain(RequestInterface $request) {
+		$absUrl = $request->getAbsoluteUrl();
+		$parts = parse_url($absUrl);
+		$host = $parts['host'];
+		if (isset($parts['port']) && $parts['port'] !== 80) {
+			return $host . ':' . $parts['port'];
+		}
+
+		return $host;
 	}
 
 	/**
